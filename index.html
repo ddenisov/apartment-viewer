@@ -1,0 +1,109 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>Квартира — 3D</title>
+<link rel="icon" href="data:,">
+<style>
+  :root { --bg: #e9e6e0; --panel: rgba(255,255,255,.92); --ink: #222; --muted: #666; }
+  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--ink);
+    font: 14px/1.4 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  #c { position: fixed; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; }
+  .panel { position: fixed; left: 16px; right: 16px; bottom: 16px; max-width: 520px; margin: 0 auto;
+    background: var(--panel); border-radius: 12px; padding: 10px 14px; box-shadow: 0 2px 12px rgba(0,0,0,.12);
+    display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: center; }
+  .panel label { display: flex; align-items: center; gap: 8px; flex: 1 1 220px; white-space: nowrap; }
+  .panel input[type=range] { flex: 1; }
+  button { font: inherit; border: 1px solid #bbb; background: #fff; border-radius: 8px; padding: 6px 12px; cursor: pointer; }
+  button:active { background: #eee; }
+  .hint { position: fixed; top: 12px; left: 16px; right: 16px; text-align: center; color: var(--muted); font-size: 13px; }
+  #loading { position: fixed; inset: 0; display: grid; place-items: center; color: var(--muted); }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="loading">Загружаю модель…</div>
+<div class="hint">Вращать — мышь или палец · приближать — колёсико или щипок · двигать — правая кнопка или два пальца</div>
+<div class="panel">
+  <label>Срез стен <input id="cut" type="range" min="0.6" max="3" step="0.05" value="1.6"> <span id="cutv">1,60 м</span></label>
+  <button id="top">Сверху</button>
+  <button id="persp">В перспективе</button>
+</div>
+<script type="importmap">
+{ "imports": {
+  "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+} }
+</script>
+<script type="module">
+import * as THREE from "three";
+import { OrbitControls } from "three/addons/controls/OrbitControls.js";
+import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
+
+const canvas = document.getElementById("c");
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+renderer.localClippingEnabled = true;
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0xe9e6e0);
+scene.add(new THREE.HemisphereLight(0xffffff, 0xb9b3a8, 1.6));
+const sun = new THREE.DirectionalLight(0xffffff, 1.4);
+sun.position.set(-6, 12, 8);
+scene.add(sun);
+
+const camera = new THREE.PerspectiveCamera(40, 1, 0.05, 200);
+const controls = new OrbitControls(camera, canvas);
+controls.enableDamping = true;
+controls.maxPolarAngle = Math.PI * 0.49;
+
+const cutPlane = new THREE.Plane(new THREE.Vector3(0, -1, 0), 1.6);  // срез по высоте (y — вверх)
+let center = new THREE.Vector3(), size = 10;
+
+function resize() {
+  const w = window.innerWidth, h = window.innerHeight;
+  renderer.setSize(w, h, false);
+  camera.aspect = w / h;
+  camera.updateProjectionMatrix();
+}
+window.addEventListener("resize", resize);
+resize();
+
+function view(top) {
+  const d = size * (camera.aspect < 1 ? 3.0 : 1.4);
+  if (top) camera.position.set(center.x, center.y + d * 1.1, center.z + 0.001);
+  else camera.position.set(center.x - d * 0.55, center.y + d * 0.75, center.z + d * 0.75);
+  controls.target.copy(center);
+  controls.update();
+}
+
+new GLTFLoader().load("apartment.glb", (gltf) => {
+  const root = gltf.scene;
+  root.traverse((o) => {
+    if (o.isMesh) {
+      const mats = Array.isArray(o.material) ? o.material : [o.material];
+      for (const m of mats) { m.clippingPlanes = [cutPlane]; m.side = THREE.DoubleSide; }
+    }
+  });
+  scene.add(root);
+  const box = new THREE.Box3().setFromObject(root);
+  box.getCenter(center);
+  center.y = box.min.y;
+  size = box.getSize(new THREE.Vector3()).length() / 2;
+  document.getElementById("loading").remove();
+  view(false);
+}, undefined, () => { document.getElementById("loading").textContent = "Не удалось загрузить модель"; });
+
+const cut = document.getElementById("cut"), cutv = document.getElementById("cutv");
+cut.addEventListener("input", () => {
+  cutPlane.constant = parseFloat(cut.value);
+  cutv.textContent = parseFloat(cut.value).toFixed(2).replace(".", ",") + " м";
+});
+document.getElementById("top").onclick = () => view(true);
+document.getElementById("persp").onclick = () => view(false);
+
+renderer.setAnimationLoop(() => { controls.update(); renderer.render(scene, camera); });
+</script>
+</body>
+</html>
